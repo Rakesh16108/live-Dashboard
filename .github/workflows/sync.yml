@@ -1,0 +1,73 @@
+name: Auto Update Dashboard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  update-index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest CSV and update index.json
+        run: |
+          python3 << 'PYEOF'
+          import os, json, glob, subprocess
+          from datetime import datetime, timezone
+
+          csv_files = glob.glob('data/*.csv') + glob.glob('data/*.CSV')
+
+          if not csv_files:
+              print("No CSV files found in data/ folder!")
+              with open('index.json', 'w') as f:
+                  json.dump({"latest_file": None, "files": [], "updated_at": datetime.now(timezone.utc).isoformat()}, f, indent=2)
+          else:
+              file_times = {}
+              for f in csv_files:
+                  result = subprocess.run(['git', 'log', '-1', '--format=%ct', '--', f], capture_output=True, text=True)
+                  ts = result.stdout.strip()
+                  file_times[f] = int(ts) if ts else int(os.path.getmtime(f))
+
+              latest = max(file_times, key=file_times.get)
+              latest_name = os.path.basename(latest)
+              all_files = sorted(file_times.items(), key=lambda x: x[1], reverse=True)
+              files_list = [{"name": os.path.basename(f), "path": f, "timestamp": ts} for f, ts in all_files]
+
+              index = {
+                  "latest_file": "data/" + latest_name,
+                  "latest_name": latest_name,
+                  "total_files": len(csv_files),
+                  "files": files_list,
+                  "updated_at": datetime.now(timezone.utc).isoformat()
+              }
+              with open('index.json', 'w') as f:
+                  json.dump(index, f, indent=2)
+
+              print(f"Latest file: {latest_name}")
+              print(f"Total CSV files: {len(csv_files)}")
+          PYEOF
+
+      - name: Commit index.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          if git diff --staged --quiet; then
+            echo "No changes to index.json"
+          else
+            git commit -m "🔄 Auto-update index.json — $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
