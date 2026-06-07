@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Collection Performance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f0f4f8;--surf:#ffffff;--surf2:#e8edf5;--brd:#d0d9e8;
+  --acc:#0099cc;--acc2:#2563eb;--acc3:#ea580c;
+  --txt:#1e293b;--mut:#64748b;--head-bg:#1e3a5f;
+  --shadow:0 2px 8px rgba(0,0,0,.12);
+}
+body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh}
+.mono{font-family:'DM Mono',monospace}
+
+/* HEADER */
+#hdr{background:var(--head-bg);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:300;box-shadow:var(--shadow)}
+#hdr h1{font-size:1.15rem;font-weight:800;background:linear-gradient(90deg,#7dd3fc,#bae6fd,#e0f2fe);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.badges{display:flex;gap:8px}
+.badge{font-size:.68rem;font-weight:700;padding:3px 10px;border-radius:99px;font-family:'DM Mono',monospace}
+.badge-live{background:#0d9488;color:#fff}.badge-fy{background:#2563eb;color:#fff}
+
+/* TABS */
+#tabbar{background:#fff;border-bottom:2px solid var(--brd);display:flex;position:sticky;top:50px;z-index:200;overflow-x:auto;padding:0 12px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.tab{padding:10px 18px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;color:var(--mut);transition:all .15s}
+.tab:hover{color:var(--acc)}
+.tab.active{color:var(--acc);border-bottom-color:var(--acc)}
+
+/* PANELS */
+.panel{display:none;padding:16px 16px 32px}
+.panel.active{display:block}
+
+/* FILTER BAR */
+.fbar{background:var(--surf2);border:1px solid var(--brd);border-radius:10px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.fbar label{font-size:.73rem;font-weight:700;color:var(--mut)}
+select.fsel{font-family:'DM Mono',monospace;font-size:.75rem;padding:4px 8px;border:1px solid var(--brd);border-radius:6px;background:#fff;color:var(--txt);cursor:pointer}
+
+/* MULTI-SELECT DROPDOWN */
+.ms-wrap{position:relative;display:inline-block}
+.ms-btn{font-family:'DM Mono',monospace;font-size:.75rem;padding:4px 28px 4px 10px;border:1px solid var(--brd);border-radius:6px;background:#fff;color:var(--txt);cursor:pointer;min-width:130px;text-align:left;position:relative}
+.ms-btn::after{content:'▾';position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:.7rem}
+.ms-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--brd);border-radius:8px;box-shadow:var(--shadow);z-index:500;min-width:170px;padding:6px 0}
+.ms-drop.open{display:block}
+.ms-actions{display:flex;gap:6px;padding:4px 10px 6px;border-bottom:1px solid var(--brd)}
+.ms-act{font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:5px;border:1px solid var(--brd);cursor:pointer;background:var(--surf2);color:var(--txt)}
+.ms-act:hover{background:var(--acc);color:#fff;border-color:var(--acc)}
+.ms-list{max-height:200px;overflow-y:auto}
+.ms-item{display:flex;align-items:center;gap:7px;padding:5px 12px;font-size:.75rem;cursor:pointer;font-family:'DM Mono',monospace}
+.ms-item:hover{background:var(--surf2)}
+.ms-item input{cursor:pointer;accent-color:var(--acc)}
+
+/* KPI CARDS */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surf);border-radius:10px;box-shadow:var(--shadow);padding:14px 16px;border-top:3px solid var(--acc)}
+.kpi-val{font-size:1.45rem;font-weight:800;color:var(--txt);font-family:'DM Mono',monospace}
+.kpi-lbl{font-size:.7rem;font-weight:700;color:var(--mut);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.kpi-sub{font-size:.65rem;color:var(--mut);margin-top:2px}
+
+/* CHART CARDS */
+.chart-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.chart-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:1100px){.chart-grid3{grid-template-columns:1fr 1fr}}
+@media(max-width:860px){.chart-grid2{grid-template-columns:1fr}}
+@media(max-width:700px){.chart-grid3{grid-template-columns:1fr}}
+.card{background:var(--surf);border-radius:10px;box-shadow:var(--shadow);padding:14px}
+.card h3{font-size:.78rem;font-weight:700;color:var(--mut);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em}
+.chart-box{position:relative;height:220px}
+
+/* TABLES */
+.tbl-wrap{overflow-x:auto;border-radius:10px;box-shadow:var(--shadow);-webkit-overflow-scrolling:touch}
+.tbl-wrap::-webkit-scrollbar{height:5px}.tbl-wrap::-webkit-scrollbar-thumb{background:var(--brd);border-radius:3px}
+table{width:100%;border-collapse:collapse;background:var(--surf);font-size:.72rem}
+thead th{background:var(--surf2);padding:7px 10px;font-weight:700;text-align:center;white-space:nowrap;border-bottom:2px solid var(--brd);position:sticky;top:0;z-index:10}
+tbody td{padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:center;font-family:'DM Mono',monospace;white-space:nowrap}
+tbody tr:hover{background:#f8fafc}
+.sticky-col{position:sticky;left:0;z-index:5;background:var(--surf2);font-weight:700;text-align:left!important}
+.sticky-col2{position:sticky;left:90px;z-index:5;background:var(--surf2);font-weight:600}
+.tbl-total td{background:#fef9c3!important;font-weight:700}
+
+/* PIVOT HEAT */
+.h0{background:#f0fdf4;color:#94a3b8}
+.h1{background:#dcfce7;color:#475569}
+.h2{background:#bbf7d0;color:#334155}
+.h3{background:#86efac;color:#14532d}
+.h4{background:#4ade80;color:#14532d}
+.h5{background:#22c55e;color:#fff}
+.h6{background:#16a34a;color:#fff}
+.h7{background:#15803d;color:#fff}
+.h8{background:#166534;color:#fff;font-weight:700}
+.h9{background:#14532d;color:#fff;font-weight:700}
+.h10{background:#052e16;color:#fff;font-weight:700}
+.dd-cell{background:#0099cc!important;color:#fff!important;font-weight:700}
+.null-cell{color:#d1d5db}
+
+/* ZONE PROGRESS BAR */
+.prog-wrap{min-width:80px;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
+.prog-bar{height:100%;border-radius:3px;transition:width .4s}
+
+/* RESOLUTION CUTS */
+.res-sec{margin-bottom:18px}
+.res-sec h4{font-size:.78rem;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;padding:6px 0}
+
+/* DPD LEGEND */
+.dpd-legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;padding:8px 12px;background:var(--surf);border-radius:8px;box-shadow:var(--shadow)}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:.68rem;font-weight:600;color:var(--mut);font-family:'DM Mono',monospace}
+.legend-dot{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+
+/* Scroll hint */
+.scroll-hint{font-size:.62rem;color:var(--mut);margin-bottom:4px;text-align:right}
+.sec-title{font-size:.9rem;font-weight:700;margin:0 0 10px;color:var(--txt)}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="hdr">
+  <h1>📊 Collection Performance Dashboard</h1>
+  <div class="badges">
+    <span class="badge badge-live">● Live Data</span>
+    <span class="badge badge-fy">FY 2025-26</span>
+  </div>
+</div>
+
+<!-- TAB BAR -->
+<div id="tabbar">
+  <div class="tab active" onclick="switchTab(0)">Overview</div>
+  <div class="tab" onclick="switchTab(1)">Table 1 — New/Old</div>
+  <div class="tab" onclick="switchTab(2)">Table 2 — Reloan</div>
+  <div class="tab" onclick="switchTab(3)">Zone &amp; State</div>
+  <div class="tab" onclick="switchTab(4)">Monthly Trend</div>
+  <div class="tab" onclick="switchTab(5)">Resolution Cuts</div>
+</div>
+
+<!-- PANEL 0: OVERVIEW -->
+<div class="panel active" id="p0">
+  <div class="fbar">
+    <label>Due Month</label>
+    <div class="ms-wrap"><button class="ms-btn" id="ms0-btn" onclick="msToggle('ms0')">All Months</button>
+      <div class="ms-drop" id="ms0-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msAll('ms0')">All</button>
+          <button class="ms-act" onclick="msSelAll('ms0')">Select All</button>
+        </div>
+        <div class="ms-list" id="ms0-list"></div>
+      </div>
+    </div>
+    <label>Type</label>
+    <select class="fsel" id="ov-type" onchange="renderOv()">
+      <option value="">All</option><option value="New">New</option><option value="Old">Old</option>
+    </select>
+  </div>
+  <div class="kpi-grid" id="kpi-row"></div>
+  <div class="chart-grid2">
+    <div class="card"><h3>Monthly Due vs Collected (₹ Cr)</h3><div class="chart-box"><canvas id="ch-bar"></canvas></div></div>
+    <div class="card"><h3>Monthly Collection Rate %</h3><div class="chart-box"><canvas id="ch-line"></canvas></div></div>
+    <div class="card"><h3>New vs Old — Collection %</h3><div class="chart-box"><canvas id="ch-novso"></canvas></div></div>
+    <div class="card"><h3>Zone-wise Collection Rate</h3><div class="chart-box"><canvas id="ch-zone"></canvas></div></div>
+  </div>
+</div>
+
+<!-- PANEL 1: TABLE 1 -->
+<div class="panel" id="p1">
+  <div class="fbar">
+    <label>Due Month</label>
+    <div class="ms-wrap"><button class="ms-btn" id="ms1-btn" onclick="msToggle('ms1')">All Months</button>
+      <div class="ms-drop" id="ms1-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msAll('ms1')">All</button>
+          <button class="ms-act" onclick="msSelAll('ms1')">Select All</button>
+        </div>
+        <div class="ms-list" id="ms1-list"></div>
+      </div>
+    </div>
+    <label>Type</label>
+    <select class="fsel" id="t1-type" onchange="renderT1()">
+      <option value="">All</option><option value="New">New</option><option value="Old">Old</option>
+    </select>
+  </div>
+  <p class="scroll-hint">← Scroll right to see all tenure columns →</p>
+  <div class="tbl-wrap" id="t1-wrap"></div>
+</div>
+
+<!-- PANEL 2: TABLE 2 -->
+<div class="panel" id="p2">
+  <div class="fbar">
+    <label>Due Month</label>
+    <div class="ms-wrap"><button class="ms-btn" id="ms2-btn" onclick="msToggle('ms2')">All Months</button>
+      <div class="ms-drop" id="ms2-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msAll('ms2')">All</button>
+          <button class="ms-act" onclick="msSelAll('ms2')">Select All</button>
+        </div>
+        <div class="ms-list" id="ms2-list"></div>
+      </div>
+    </div>
+    <label>Reloan Type</label>
+    <select class="fsel" id="t2-rtype" onchange="renderT2()">
+      <option value="">All</option>
+      <option value="re_loan_normal_approved">Normal Appvd</option>
+      <option value="re_loan_manual_approved">Manual Appvd</option>
+    </select>
+  </div>
+  <p class="scroll-hint">← Scroll right to see all tenure columns →</p>
+  <div class="tbl-wrap" id="t2-wrap"></div>
+</div>
+
+<!-- PANEL 3: ZONE & STATE -->
+<div class="panel" id="p3">
+  <div class="fbar">
+    <label>Due Month</label>
+    <div class="ms-wrap"><button class="ms-btn" id="ms3-btn" onclick="msToggle('ms3')">All Months</button>
+      <div class="ms-drop" id="ms3-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msAll('ms3')">All</button>
+          <button class="ms-act" onclick="msSelAll('ms3')">Select All</button>
+        </div>
+        <div class="ms-list" id="ms3-list"></div>
+      </div>
+    </div>
+  </div>
+  <p class="sec-title">Zone-wise Performance</p>
+  <div class="tbl-wrap" style="margin-bottom:18px" id="zone-tbl"></div>
+  <p class="sec-title">State-wise Performance</p>
+  <div class="tbl-wrap" id="state-tbl"></div>
+</div>
+
+<!-- PANEL 4: MONTHLY TREND -->
+<div class="panel" id="p4">
+  <div class="fbar">
+    <label>Due Month</label>
+    <div class="ms-wrap"><button class="ms-btn" id="ms4-btn" onclick="msToggle('ms4')">All Months</button>
+      <div class="ms-drop" id="ms4-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msAll('ms4')">All</button>
+          <button class="ms-act" onclick="msSelAll('ms4')">Select All</button>
+        </div>
+        <div class="ms-list" id="ms4-list"></div>
+      </div>
+    </div>
+    <label>Type</label>
+    <select class="fsel" id="tr-type" onchange="renderTrend()">
+      <option value="">All</option><option value="New">New</option><option value="Old">Old</option>
+    </select>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:16px" id="trend-tbl"></div>
+  <div class="dpd-legend" id="dpd-legend"></div>
+  <div class="chart-grid3">
+    <div class="card"><h3>Overall — Collection % by DPD Band</h3><div class="chart-box"><canvas id="ch-tr0"></canvas></div></div>
+    <div class="card"><h3>New — Collection % by DPD Band</h3><div class="chart-box"><canvas id="ch-tr1"></canvas></div></div>
+    <div class="card"><h3>Old (Re-loans) — Collection % by DPD Band</h3><div class="chart-box"><canvas id="ch-tr2"></canvas></div></div>
+  </div>
+</div>
+
+<!-- PANEL 5: RESOLUTION CUTS -->
+<div class="panel" id="p5">
+  <div class="fbar">
+    <label>Due Date From</label>
+    <input type="date" id="r-from" class="fsel" onchange="renderRes()"/>
+    <label>To</label>
+    <input type="date" id="r-to" class="fsel" onchange="renderRes()"/>
+    <label>Type</label>
+    <select class="fsel" id="r-type" onchange="renderRes()">
+      <option value="">All</option><option value="New">New</option><option value="Old">Old</option>
+    </select>
+    <label>Zone</label>
+    <div class="ms-wrap"><button class="ms-btn" id="msr-zone-btn" onclick="msToggle('msr-zone')" style="min-width:100px">Total</button>
+      <div class="ms-drop" id="msr-zone-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msGAll('msr-zone')">Total</button>
+          <button class="ms-act" onclick="msGSelAll('msr-zone')">All</button>
+        </div>
+        <div class="ms-list" id="msr-zone-list"></div>
+      </div>
+    </div>
+    <label>Due Band</label>
+    <div class="ms-wrap"><button class="ms-btn" id="msr-dband-btn" onclick="msToggle('msr-dband')" style="min-width:100px">Total</button>
+      <div class="ms-drop" id="msr-dband-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msGAll('msr-dband')">Total</button>
+          <button class="ms-act" onclick="msGSelAll('msr-dband')">All</button>
+        </div>
+        <div class="ms-list" id="msr-dband-list"></div>
+      </div>
+    </div>
+    <label>Tenure Band</label>
+    <div class="ms-wrap"><button class="ms-btn" id="msr-tband-btn" onclick="msToggle('msr-tband')" style="min-width:100px">Total</button>
+      <div class="ms-drop" id="msr-tband-drop">
+        <div class="ms-actions">
+          <button class="ms-act" onclick="msGAll('msr-tband')">Total</button>
+          <button class="ms-act" onclick="msGSelAll('msr-tband')">All</button>
+        </div>
+        <div class="ms-list" id="msr-tband-list"></div>
+      </div>
+    </div>
+  </div>
+  <div id="res-tables"></div>
+</div>
+
+<script>
+// ─────────────────── DATA ───────────────────
+// ─────────────────── CONSTANTS ────────────────────
+const TENURE_ORDER = ['minus_15','minus_14','minus_13','minus_12','minus_11','minus_10','minus_9','minus_8','minus_7','minus_6','minus_5','minus_4','minus_3','minus_2','minus_1','DD','plus_1','plus_2','plus_3','plus_4','plus_5','plus_6','plus_7','plus_8_10','plus_11_15','plus_16_20','plus_21_25','plus_26_30','plus_31_60','plus_61_90','plus_90+'];
+const DUE_BAND_ORDER = ['<10K','10K-20K','20K-30K','30K-40K','>40K'];
+const TEN_BAND_ORDER = ['<15D','16-25D','21-25D','26-30D','31-35D','36-40D','41-45D','>45D'];
+const CATG_ORDER = ['A','B','C','D','E','F','G','H','I','J','NF'];
+const MONTH_MAP_DEFAULT = {'2025-09-01':'Sep-25','2025-10-01':'Oct-25','2025-11-01':'Nov-25','2025-12-01':'Dec-25','2026-01-01':'Jan-26','2026-02-01':'Feb-26','2026-03-01':'Mar-26','2026-04-01':'Apr-26','2026-05-01':'May-26','2026-06-01':'Jun-26','2026-07-01':'Jul-26','2026-10-01':'Oct-26'};
+const PRE_DUE=['minus_15','minus_14','minus_13','minus_12','minus_11','minus_10','minus_9','minus_8','minus_7','minus_6','minus_5','minus_4','minus_3','minus_2','minus_1'];
+const DPD_DD=['DD'];
+const DPD_15=['plus_1','plus_2','plus_3','plus_4','plus_5','plus_6','plus_7','plus_8_10','plus_11_15'];
+const DPD_30=['plus_16_20','plus_21_25','plus_26_30'];
+const DPD_60=['plus_31_60'];
+const DPD_90=['plus_61_90'];
+const DPD_90P=['plus_90+'];
+
+// ── CSV FILE NAME — sirf yahan change karo naya file aane par ──
+const CSV_FILE = 'Colleciton_data1_1.csv';
+
+// ─────────────────── CSV PARSER ──────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const NUM_COLS = new Set(['cnt_due','amt_due','cnt_paid','collection_amount','sanction_amount']);
+  return lines.slice(1).map(line => {
+    const vals = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"') { inQ = !inQ; }
+      else if (line[i] === ',' && !inQ) { vals.push(cur); cur = ''; }
+      else cur += line[i];
+    }
+    vals.push(cur);
+    const row = {};
+    headers.forEach((h, i) => {
+      let v = (vals[i] || '').trim();
+      if (v === '' || v === 'nan' || v === 'NaN' || v === 'None') v = null;
+      row[h] = (v !== null && NUM_COLS.has(h)) ? (parseFloat(v) || 0) : v;
+    });
+    return row;
+  }).filter(r => r.due_month);
+}
+
+// ─────────────────── DATA PROCESSING ─────────────────────────
+function processData(rawRows) {
+  const rows = rawRows.map(r => ({
+    due_date:           r.due_date,
+    due_month:          r.due_month,
+    due_band:           r.due_band,
+    tenure_band:        r.tenure_band,
+    new_old:            r.new_old,
+    disbursal_category: r.disbursal_category,
+    reloan_type:        r.reloan_type,
+    payment_tenure:     r.payment_tenure ? r.payment_tenure.trim() : null,
+    state:              r.state,
+    zone:               r.zone,
+    cnt_due:            r.cnt_due || 0,
+    amt_due:            r.amt_due || 0,
+    cnt_paid:           r.cnt_paid || 0,
+    collection_amount:  r.collection_amount,
+    sanction_amount:    r.sanction_amount || 0
+  }));
+
+  const due_months = [...new Set(rows.map(r => r.due_month))].filter(Boolean).sort();
+  const zones      = [...new Set(rows.map(r => r.zone))].filter(Boolean).sort();
+
+  function grpSum(data, keys) {
+    const agg = {};
+    data.forEach(r => {
+      const k = keys.map(key => r[key] ?? '__null__').join('||');
+      if (!agg[k]) {
+        agg[k] = {};
+        keys.forEach(key => agg[k][key] = r[key]);
+        agg[k].cnt_due=0; agg[k].amt_due=0; agg[k].cnt_paid=0; agg[k].collection_amount=0; agg[k].sanction_amount=0;
+      }
+      agg[k].cnt_due            += r.cnt_due||0;
+      agg[k].amt_due            += r.amt_due||0;
+      agg[k].cnt_paid           += r.cnt_paid||0;
+      agg[k].collection_amount  += r.collection_amount||0;
+      agg[k].sanction_amount    += r.sanction_amount||0;
+    });
+    return Object.values(agg).map(r => ({
+      ...r,
+      collection_pct: r.amt_due ? +((r.collection_amount/r.amt_due)*100).toFixed(1) : 0
+    }));
+  }
+
+  function buildPivot(data, col1Key, col2Key) {
+    const totalDue = {}, colMap = {};
+    data.forEach(r => {
+      const rk = (r[col1Key]||'')+'||'+(r[col2Key]||'');
+      if (!totalDue[rk]) totalDue[rk] = {k1:r[col1Key], k2:r[col2Key], due:0};
+      totalDue[rk].due += r.amt_due||0;
+      if (!colMap[rk]) { colMap[rk] = {[col1Key]:r[col1Key],[col2Key]:r[col2Key]}; TENURE_ORDER.forEach(t => colMap[rk][t]=0); }
+      const t = r.payment_tenure;
+      if (t && colMap[rk][t] !== undefined) colMap[rk][t] += r.collection_amount||0;
+    });
+    return Object.keys(colMap).map(rk => {
+      const row = colMap[rk], td = totalDue[rk]?.due || 1;
+      let cum = 0;
+      const out = {[col1Key]:row[col1Key],[col2Key]:row[col2Key]};
+      TENURE_ORDER.forEach(t => { cum += (row[t]/td)*100; out[t] = +cum.toFixed(2); });
+      return out;
+    });
+  }
+
+  function buildTrend(data, months) {
+    return months.map(m => {
+      const sub = data.filter(r => r.due_month===m);
+      const td  = sub.reduce((a,r)=>a+(r.amt_due||0),0);
+      if (!td) return {due_month:m,inc_pre:0,inc_dd:0,inc_15:0,inc_30:0,inc_60:0,inc_90:0,inc_90p:0,total:0};
+      const c = ts => sub.filter(r=>ts.includes(r.payment_tenure)).reduce((a,r)=>a+(r.collection_amount||0),0);
+      const cp=c(PRE_DUE),cd=c(DPD_DD),c15=c(DPD_15),c30=c(DPD_30),c60=c(DPD_60),c90=c(DPD_90),c90p=c(DPD_90P);
+      const cPre=(cp/td)*100, cDd=(cp+cd)/td*100, c15c=(cp+cd+c15)/td*100, c30c=(cp+cd+c15+c30)/td*100, c60c=(cp+cd+c15+c30+c60)/td*100, c90c=(cp+cd+c15+c30+c60+c90)/td*100, c90pc=(cp+cd+c15+c30+c60+c90+c90p)/td*100;
+      return {due_month:m, inc_pre:+cPre.toFixed(2), inc_dd:+(cDd-cPre).toFixed(2), inc_15:+(c15c-cDd).toFixed(2), inc_30:+(c30c-c15c).toFixed(2), inc_60:+(c60c-c30c).toFixed(2), inc_90:+(c90c-c60c).toFixed(2), inc_90p:+(c90pc-c90c).toFixed(2), total:+c90pc.toFixed(2)};
+    });
+  }
+
+  const summary    = grpSum(rows, ['new_old','due_month']);
+  const monthly    = grpSum(rows, ['due_month']);
+  const zone_all   = grpSum(rows.filter(r=>r.zone), ['zone']);
+  const zone_month = grpSum(rows.filter(r=>r.zone), ['zone','due_month']);
+  const state_grp  = grpSum(rows.filter(r=>r.state), ['state']).sort((a,b)=>b.amt_due-a.amt_due);
+  const state_all  = state_grp.slice(0,30);
+  const top30      = new Set(state_all.map(r=>r.state));
+  const state_month= grpSum(rows.filter(r=>r.state&&top30.has(r.state)), ['state','due_month']);
+  const pivot1     = buildPivot(rows, 'new_old', 'due_month');
+  const pivot2     = buildPivot(rows.filter(r=>r.reloan_type), 'reloan_type', 'due_month');
+  const trend_overall = buildTrend(rows, due_months);
+  const trend_new     = buildTrend(rows.filter(r=>r.new_old==='New'), due_months);
+  const trend_old     = buildTrend(rows.filter(r=>r.new_old==='Old'), due_months);
+  const dd_chart   = grpSum(rows.filter(r=>r.payment_tenure==='DD'&&r.zone), ['zone','due_month']);
+  const res_detail = grpSum(rows, ['due_month','due_date','new_old','zone','due_band','tenure_band','disbursal_category']);
+  const ddbm = {};
+  due_months.forEach(m => { ddbm[m]=[...new Set(rows.filter(r=>r.due_month===m).map(r=>r.due_date).filter(Boolean))].sort(); });
+  const month_map = {};
+  due_months.forEach(m => { month_map[m] = MONTH_MAP_DEFAULT[m] || (() => { const d=new Date(m); return d.toLocaleString('en',{month:'short',year:'2-digit'}); })(); });
+
+  return {
+    pivot1, pivot2, summary, monthly, zone_all, zone_month, state_all, state_month,
+    dd_chart, res_detail, due_dates_by_month:ddbm, trend_overall, trend_new, trend_old,
+    tenure_order:TENURE_ORDER, due_band_order:DUE_BAND_ORDER, ten_band_order:TEN_BAND_ORDER,
+    month_map, catg_order:CATG_ORDER, zones, due_months
+  };
+}
+
+// ─────────────────── LOADING UI ──────────────────────────────
+(function showLoader(){
+  const loaderDiv = document.createElement('div');
+  loaderDiv.id = 'csv-loader';
+  loaderDiv.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#f0f4f8;z-index:9999;font-family:Syne,sans-serif';
+  loaderDiv.innerHTML = `
+    <div style="font-size:2.2rem">📊</div>
+    <div style="font-size:1.1rem;font-weight:700;color:#1e3a5f">Loading Dashboard...</div>
+    <div style="font-size:.8rem;color:#64748b;font-family:DM Mono,monospace">Reading <b id="csv-fname"></b></div>
+    <div style="width:240px;height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden">
+      <div id="csv-prog" style="height:100%;background:#0099cc;width:0%;transition:width .3s;border-radius:4px"></div>
+    </div>
+    <div id="csv-msg" style="font-size:.7rem;color:#94a3b8"></div>`;
+  document.body.prepend(loaderDiv);
+  document.getElementById('csv-fname').textContent = CSV_FILE;
+})();
+
+function setProgress(p, msg) {
+  const el = document.getElementById('csv-prog');
+  const ml = document.getElementById('csv-msg');
+  if (el) el.style.width = p + '%';
+  if (ml) ml.textContent = msg || '';
+}
+
+// ─────────────────── FETCH & BOOT ────────────────────────────
+let D;
+fetch(CSV_FILE)
+  .then(res => {
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' — file not found: ' + CSV_FILE);
+    setProgress(30, 'File loaded, parsing CSV...');
+    return res.text();
+  })
+  .then(text => {
+    setProgress(55, 'Parsing rows...');
+    const rows = parseCSV(text);
+    setProgress(72, 'Building pivot tables & trends...');
+    D = processData(rows);
+    setProgress(92, 'Rendering dashboard...');
+    return new Promise(r => setTimeout(r, 150));
+  })
+  .then(() => {
+    const loader = document.getElementById('csv-loader');
+    if (loader) loader.remove();
+    initDashboard();
+  })
+  .catch(err => {
+    const loader = document.getElementById('csv-loader');
+    if (loader) loader.innerHTML = `
+      <div style="text-align:center;padding:40px;font-family:Syne,sans-serif">
+        <div style="font-size:2.5rem;margin-bottom:14px">⚠️</div>
+        <div style="font-size:1.1rem;font-weight:700;color:#dc2626;margin-bottom:10px">Data File Load Failed</div>
+        <div style="font-size:.8rem;color:#475569;font-family:DM Mono,monospace;background:#fef2f2;border:1px solid #fecaca;padding:10px 16px;border-radius:8px;margin:10px auto;max-width:420px">${err.message}</div>
+        <div style="font-size:.78rem;color:#64748b;margin-top:14px;line-height:1.6">
+          ✅ Make sure <b>${CSV_FILE}</b> is in the <b>same folder</b> as this HTML file.<br>
+          ✅ For GitHub Pages: both files must be committed to the repo.<br>
+          ✅ For local use: open via a server, not file://
+        </div>
+      </div>`;
+  });
+
+
+
+// ─────────────────── HELPERS ────────────────
+const fmt = v => v==null?'--':v.toLocaleString('en-IN');
+const fmtCr = v => v==null?'--':(v/1e7).toFixed(2)+' Cr';
+const fmtPct = (v,dp=1) => v==null?'--':v.toFixed(dp)+'%';
+const mm = m => D.month_map[m] || m;
+
+function heatCls(v){
+  if(v==null||v===0) return 'h0';
+  if(v<10) return 'h1'; if(v<20) return 'h2'; if(v<30) return 'h3';
+  if(v<40) return 'h4'; if(v<50) return 'h5'; if(v<60) return 'h6';
+  if(v<70) return 'h7'; if(v<80) return 'h8'; if(v<90) return 'h9';
+  return 'h10';
+}
+
+function statePctCls(v){
+  if(v>=75) return 'style="color:#059669;font-weight:700"';
+  if(v>=65) return 'style="color:#0099cc;font-weight:700"';
+  if(v>=55) return 'style="color:#2563eb;font-weight:700"';
+  if(v>5)   return 'style="color:#d97706"';
+  return 'style="color:#dc2626"';
+}
+
+function resCls(v,type){
+  if(v==null) return '';
+  if(v>=35) return 'style="color:#059669;font-weight:700"';
+  if(v>=25) return 'style="color:#0099cc;font-weight:700"';
+  if(v>=15) return 'style="color:#d97706"';
+  return 'style="color:#dc2626"';
+}
+
+const charts = {};
+function destroyChart(id){ if(charts[id]){charts[id].destroy();delete charts[id];} }
+
+// ─────────────────── MULTI-SELECT (MONTH) ──────────────────
+const msState = {};
+function msInit(id, items, onChange){
+  msState[id] = {sel: new Set(), items, onChange};
+  const list = document.getElementById(id+'-list');
+  list.innerHTML = '';
+  items.forEach(m => {
+    const lbl = mm(m);
+    const el = document.createElement('div');
+    el.className='ms-item';
+    el.innerHTML = `<input type="checkbox" id="ms-${id}-${m}" value="${m}"><label for="ms-${id}-${m}">${lbl}</label>`;
+    el.querySelector('input').addEventListener('change', e => {
+      if(e.target.checked) msState[id].sel.add(m); else msState[id].sel.delete(m);
+      msUpdateLabel(id); msState[id].onChange();
+    });
+    list.appendChild(el);
+  });
+}
+function msToggle(id){
+  const drop = document.getElementById(id+'-drop');
+  // close all others
+  document.querySelectorAll('.ms-drop.open').forEach(d => { if(d.id!==id+'-drop') d.classList.remove('open'); });
+  drop.classList.toggle('open');
+}
+function msAll(id){ msState[id].sel.clear(); msState[id].items.forEach(m=>{ const cb=document.getElementById('ms-'+id+'-'+m); if(cb) cb.checked=false; }); msUpdateLabel(id); msState[id].onChange(); }
+function msSelAll(id){ msState[id].items.forEach(m=>{ msState[id].sel.add(m); const cb=document.getElementById('ms-'+id+'-'+m); if(cb) cb.checked=true; }); msUpdateLabel(id); msState[id].onChange(); }
+function msUpdateLabel(id){ const s=msState[id].sel; const btn=document.getElementById(id+'-btn'); if(!s.size){btn.textContent='All Months'; return;} if(s.size<=2){ btn.textContent=[...s].map(mm).join(', '); return;} btn.textContent=s.size+' selected'; }
+function getMsSel(id){ const s=msState[id]?.sel; return(!s||s.size===0)?null:[...s]; }
+
+// ─────────────────── MULTI-SELECT (GENERIC) ──────────────────
+const msGState = {};
+function msGInit(id, items, onChange){
+  msGState[id] = {sel: new Set(), items, onChange};
+  const list = document.getElementById(id+'-list');
+  list.innerHTML = '';
+  items.forEach(v => {
+    const el = document.createElement('div');
+    el.className = 'ms-item';
+    el.innerHTML = `<input type="checkbox" id="msr-${id}-${v}" value="${v}"><label for="msr-${id}-${v}">${v}</label>`;
+    el.querySelector('input').addEventListener('change', e => {
+      if(e.target.checked) msGState[id].sel.add(v); else msGState[id].sel.delete(v);
+      msGUpdateLabel(id); msGState[id].onChange();
+    });
+    list.appendChild(el);
+  });
+}
+function msGAll(id){ msGState[id].sel.clear(); msGState[id].items.forEach(v=>{ const cb=document.getElementById('msr-'+id+'-'+v); if(cb) cb.checked=false; }); msGUpdateLabel(id); msGState[id].onChange(); }
+function msGSelAll(id){ msGState[id].items.forEach(v=>{ msGState[id].sel.add(v); const cb=document.getElementById('msr-'+id+'-'+v); if(cb) cb.checked=true; }); msGUpdateLabel(id); msGState[id].onChange(); }
+function msGUpdateLabel(id){ const s=msGState[id].sel; const btn=document.getElementById(id+'-btn'); if(!s.size){btn.textContent='Total'; return;} if(s.size<=2){btn.textContent=[...s].join(', '); return;} btn.textContent=s.size+' sel'; }
+function getMsSelG(id){ const s=msGState[id]?.sel; return(!s||s.size===0)?null:[...s]; }
+
+// Close dropdowns on outside click
+document.addEventListener('click', e => {
+  if(!e.target.closest('.ms-wrap')){
+    document.querySelectorAll('.ms-drop.open').forEach(d=>d.classList.remove('open'));
+  }
+});
+
+// ─────────────────── TABS ─────────────────────────────────────
+function switchTab(i){
+  document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',i===j));
+  document.querySelectorAll('.panel').forEach((p,j)=>p.classList.toggle('active',i===j));
+  const renders=[renderOv,renderT1,renderT2,renderZS,renderTrend,renderRes];
+  renders[i]();
+}
+
+// ─────────────────── CHART OPTIONS ───────────────────────────
+const baseChartOpts = {
+  responsive:true, maintainAspectRatio:false,
+  plugins:{
+    legend:{labels:{font:{family:'DM Mono',size:11},color:'#64748b'}},
+    tooltip:{backgroundColor:'#1e293b',titleColor:'#f8fafc',bodyColor:'#94a3b8',cornerRadius:8}
+  },
+  scales:{
+    x:{ticks:{font:{family:'DM Mono',size:10},color:'#64748b'},grid:{color:'#e2e8f0'}},
+    y:{ticks:{font:{family:'DM Mono',size:10},color:'#64748b'},grid:{color:'#e2e8f0'}}
+  }
+};
+
+// ─────────────────── TAB 0: OVERVIEW ─────────────────────────
+function renderOv(){
+  const mSel = getMsSel('ms0');
+  const typSel = document.getElementById('ov-type').value;
+
+  // Filter summary
+  let sum = D.summary;
+  if(mSel) sum = sum.filter(r=>mSel.includes(r.due_month));
+  if(typSel) sum = sum.filter(r=>r.new_old===typSel);
+
+  // Aggregate KPIs
+  let tDue=0,tCol=0,tSanc=0,tCases=0;
+  sum.forEach(r=>{tDue+=r.amt_due||0;tCol+=r.collection_amount||0;tSanc+=r.sanction_amount||0;tCases+=r.cnt_due||0;});
+  const colPct = tDue?((tCol/tDue)*100).toFixed(1):'0.0';
+
+  // Best month
+  let monthly = D.monthly;
+  if(mSel) monthly = monthly.filter(r=>mSel.includes(r.due_month));
+  let bestM='--', bestPct=0;
+  monthly.forEach(r=>{ if((r.collection_pct||0)>bestPct){bestPct=r.collection_pct;bestM=mm(r.due_month);} });
+
+  // Avg pct (matured >5%)
+  const maturePcts = monthly.filter(r=>r.collection_pct>5).map(r=>r.collection_pct);
+  const avgPct = maturePcts.length?(maturePcts.reduce((a,b)=>a+b,0)/maturePcts.length).toFixed(1)+'%':'--';
+
+  document.getElementById('kpi-row').innerHTML = `
+    <div class="kpi" style="border-top-color:#0099cc"><div class="kpi-val mono">₹${fmtCr(tDue)}</div><div class="kpi-lbl">Total Due Amount</div></div>
+    <div class="kpi" style="border-top-color:#10b981"><div class="kpi-val mono">${colPct}%</div><div class="kpi-lbl">Collection Rate</div><div class="kpi-sub">₹${fmtCr(tCol)} collected</div></div>
+    <div class="kpi" style="border-top-color:#2563eb"><div class="kpi-val mono">₹${fmtCr(tSanc)}</div><div class="kpi-lbl">Sanction Amount</div></div>
+    <div class="kpi" style="border-top-color:#f59e0b"><div class="kpi-val mono">${fmt(tCases)}</div><div class="kpi-lbl">Due Cases</div></div>
+    <div class="kpi" style="border-top-color:#a855f7"><div class="kpi-val mono">${avgPct}</div><div class="kpi-lbl">Avg Collection %</div><div class="kpi-sub">Matured months</div></div>
+    <div class="kpi" style="border-top-color:#ea580c"><div class="kpi-val mono">${bestM}</div><div class="kpi-lbl">Best Month</div><div class="kpi-sub">${bestPct}%</div></div>
+  `;
+
+  // Monthly bar chart
+  const months = monthly.map(r=>mm(r.due_month));
+  destroyChart('ch-bar');
+  charts['ch-bar'] = new Chart(document.getElementById('ch-bar'),{
+    type:'bar',
+    data:{labels:months,datasets:[
+      {label:'Due',data:monthly.map(r=>(r.amt_due/1e7).toFixed(2)),backgroundColor:'#bfdbfe',borderWidth:0},
+      {label:'Collected',data:monthly.map(r=>(r.collection_amount/1e7).toFixed(2)),backgroundColor:'#0099cc',borderWidth:0}
+    ]},
+    options:{...baseChartOpts,plugins:{...baseChartOpts.plugins,title:{display:false}}}
+  });
+
+  // Collection Rate line
+  destroyChart('ch-line');
+  charts['ch-line'] = new Chart(document.getElementById('ch-line'),{
+    type:'line',
+    data:{labels:months,datasets:[{
+      label:'Collection %',data:monthly.map(r=>r.collection_pct),
+      borderColor:'#0099cc',backgroundColor:'rgba(0,153,204,.1)',
+      tension:0.3,pointRadius:4,fill:true,pointBackgroundColor:'#0099cc'
+    }]},
+    options:{...baseChartOpts,scales:{...baseChartOpts.scales,y:{...baseChartOpts.scales.y,max:100,min:0}}}
+  });
+
+  // New vs Old
+  const newData = D.summary.filter(r=>r.new_old==='New');
+  const oldData = D.summary.filter(r=>r.new_old==='Old');
+  const filterM = mSel || D.due_months;
+  const newPcts = filterM.map(m=>{ const r=newData.find(x=>x.due_month===m); return r?r.collection_pct:null; });
+  const oldPcts = filterM.map(m=>{ const r=oldData.find(x=>x.due_month===m); return r?r.collection_pct:null; });
+  destroyChart('ch-novso');
+  charts['ch-novso'] = new Chart(document.getElementById('ch-novso'),{
+    type:'line',
+    data:{labels:filterM.map(mm),datasets:[
+      {label:'New',data:newPcts,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',tension:0.3,pointRadius:4,fill:true},
+      {label:'Old',data:oldPcts,borderColor:'#ea580c',backgroundColor:'rgba(234,88,12,.08)',tension:0.3,pointRadius:4,fill:true}
+    ]},
+    options:{...baseChartOpts,scales:{...baseChartOpts.scales,y:{...baseChartOpts.scales.y,max:100,min:0}}}
+  });
+
+  // Zone grouped bar
+  let zdata = D.zone_all;
+  if(mSel){
+    const zm = D.zone_month.filter(r=>mSel.includes(r.due_month));
+    const zagg = {};
+    zm.forEach(r=>{ if(!zagg[r.zone]){zagg[r.zone]={zone:r.zone,amt_due:0,collection_amount:0};} zagg[r.zone].amt_due+=r.amt_due||0; zagg[r.zone].collection_amount+=r.collection_amount||0; });
+    zdata = Object.values(zagg).map(r=>({...r, collection_pct:r.amt_due?+(r.collection_amount/r.amt_due*100).toFixed(1):0}));
+  }
+  destroyChart('ch-zone');
+  charts['ch-zone'] = new Chart(document.getElementById('ch-zone'),{
+    type:'bar',
+    data:{labels:zdata.map(r=>r.zone),datasets:[{
+      label:'Collection %',data:zdata.map(r=>r.collection_pct),
+      backgroundColor:['#0099cc','#2563eb','#10b981','#ea580c','#a855f7'],borderWidth:0
+    }]},
+    options:{...baseChartOpts,scales:{...baseChartOpts.scales,y:{...baseChartOpts.scales.y,max:100,min:0}}}
+  });
+}
+
+// ─────────────────── PIVOT TABLE RENDERER ──────────────────
+function buildPivotTable(rows, col1Label, col1Key, col2Key){
+  const TORD = D.tenure_order;
+  const preCols = TORD.slice(0,15);
+  const ddCol  = ['DD'];
+  const postCols= TORD.slice(16);
+
+  let html = '<table><thead>';
+  html += `<tr><th class="sticky-col" rowspan="2">${col1Label}</th><th class="sticky-col2" rowspan="2">Due Month</th>`;
+  html += `<th colspan="${preCols.length}" style="color:#64748b;background:#f1f5f9">Pre-Due</th>`;
+  html += `<th colspan="1" style="background:#0099cc;color:#fff">DD</th>`;
+  html += `<th colspan="${postCols.length}" style="color:#2563eb;background:#eff6ff">Post-Due</th>`;
+  html += '</tr><tr>';
+  preCols.forEach(t=>{ html+=`<th style="min-width:58px;color:#64748b">${t.replace('minus_','-').replace('plus_','+')}</th>`; });
+  html += `<th style="background:#0099cc;color:#fff;min-width:56px">DD</th>`;
+  postCols.forEach(t=>{ html+=`<th style="min-width:58px;color:#2563eb">${t.replace('plus_','+')}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(r=>{
+    html += `<tr><td class="sticky-col">${r[col1Key]||''}</td><td class="sticky-col2">${mm(r[col2Key])}</td>`;
+    TORD.forEach(t=>{
+      const v = r[t];
+      if(t==='DD'){ html+=`<td class="dd-cell">${v!=null?v.toFixed(2):'--'}</td>`; return; }
+      const cls = (v==null||v===0)?'null-cell':heatCls(v);
+      html+=`<td class="${cls}">${v!=null?v.toFixed(2):'--'}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+// ─────────────────── TAB 1: TABLE 1 ──────────────────────────
+function renderT1(){
+  const mSel = getMsSel('ms1');
+  const typSel = document.getElementById('t1-type').value;
+  let rows = D.pivot1;
+  if(mSel) rows = rows.filter(r=>mSel.includes(r.due_month));
+  if(typSel) rows = rows.filter(r=>r.new_old===typSel);
+  document.getElementById('t1-wrap').innerHTML = buildPivotTable(rows,'Type','new_old','due_month');
+}
+
+// ─────────────────── TAB 2: TABLE 2 ──────────────────────────
+function renderT2(){
+  const mSel = getMsSel('ms2');
+  const rtSel = document.getElementById('t2-rtype').value;
+  let rows = D.pivot2;
+  if(mSel) rows = rows.filter(r=>mSel.includes(r.due_month));
+  if(rtSel) rows = rows.filter(r=>r.reloan_type===rtSel);
+  const rlMap = {'re_loan_normal_approved':'Normal Appvd','re_loan_manual_approved':'Manual Appvd'};
+  const mapped = rows.map(r=>({...r, reloan_type: rlMap[r.reloan_type]||r.reloan_type}));
+  document.getElementById('t2-wrap').innerHTML = buildPivotTable(mapped,'Reloan Type','reloan_type','due_month');
+}
+
+// ─────────────────── TAB 3: ZONE & STATE ─────────────────────
+function barProg(pct){
+  let col = '#94a3b8';
+  if(pct>=80) col='#10b981'; else if(pct>=70) col='#0099cc'; else if(pct>=60) col='#2563eb'; else if(pct>5) col='#f59e0b';
+  return `<div class="prog-wrap"><div class="prog-bar" style="width:${Math.min(pct,100)}%;background:${col}"></div></div>`;
+}
+
+function renderZS(){
+  const mSel = getMsSel('ms3');
+  const showSanc = !mSel;
+
+  let zdata = D.zone_all;
+  if(mSel){
+    const zm = D.zone_month.filter(r=>mSel.includes(r.due_month));
+    const zagg = {};
+    zm.forEach(r=>{ if(!zagg[r.zone]){zagg[r.zone]={zone:r.zone,cnt_due:0,amt_due:0,cnt_paid:0,collection_amount:0,sanction_amount:0};} const z=zagg[r.zone]; z.cnt_due+=r.cnt_due||0; z.amt_due+=r.amt_due||0; z.cnt_paid+=r.cnt_paid||0; z.collection_amount+=r.collection_amount||0; z.sanction_amount+=r.sanction_amount||0; });
+    zdata = Object.values(zagg).map(r=>({...r, collection_pct:r.amt_due?+(r.collection_amount/r.amt_due*100).toFixed(1):0}));
+  }
+
+  let zh = '<table><thead><tr><th style="text-align:left">Zone</th><th>Due Cases</th><th>Due Amount</th><th>Sanction Amt</th><th>Collected</th><th>Collection %</th><th style="min-width:90px">Visual</th></tr></thead><tbody>';
+  zdata.forEach(r=>{
+    zh += `<tr><td style="font-weight:700;text-align:left">${r.zone||'--'}</td><td>${fmt(r.cnt_due)}</td><td>${fmtCr(r.amt_due)}</td>`;
+    zh += showSanc?`<td>${fmtCr(r.sanction_amount)}</td>`:`<td>--</td>`;
+    zh += `<td>${fmtCr(r.collection_amount)}</td><td>${fmtPct(r.collection_pct)}</td><td>${barProg(r.collection_pct||0)}</td></tr>`;
+  });
+  zh += '</tbody></table>';
+  document.getElementById('zone-tbl').innerHTML = zh;
+
+  let sdata = D.state_all;
+  if(mSel){
+    const sm = D.state_month.filter(r=>mSel.includes(r.due_month));
+    const sagg = {};
+    sm.forEach(r=>{ if(!sagg[r.state]){sagg[r.state]={state:r.state,cnt_due:0,amt_due:0,cnt_paid:0,collection_amount:0};} const s=sagg[r.state]; s.cnt_due+=r.cnt_due||0; s.amt_due+=r.amt_due||0; s.cnt_paid+=r.cnt_paid||0; s.collection_amount+=r.collection_amount||0; });
+    sdata = Object.values(sagg).sort((a,b)=>b.amt_due-a.amt_due).map(r=>({...r,collection_pct:r.amt_due?+(r.collection_amount/r.amt_due*100).toFixed(1):0}));
+  }
+
+  let sh = '<table><thead><tr><th style="text-align:left">State</th><th>Due Cases</th><th>Due Amount</th><th>Collected</th><th>Collection %</th></tr></thead><tbody>';
+  sdata.forEach(r=>{
+    const cls = statePctCls(r.collection_pct||0);
+    sh += `<tr><td style="text-align:left">${r.state||'--'}</td><td>${fmt(r.cnt_due)}</td><td>${fmtCr(r.amt_due)}</td><td>${fmtCr(r.collection_amount)}</td><td ${cls}>${fmtPct(r.collection_pct)}</td></tr>`;
+  });
+  sh += '</tbody></table>';
+  document.getElementById('state-tbl').innerHTML = sh;
+}
+
+// ─────────────────── TAB 4: MONTHLY TREND ────────────────────
+const DPD_BANDS = [
+  {key:'inc_pre',label:'Pre-Due (till -1D)',color:'#3b82f6'},
+  {key:'inc_dd', label:'Due Date (DD)',    color:'#10b981'},
+  {key:'inc_15', label:'Till 15 DPD',     color:'#f59e0b'},
+  {key:'inc_30', label:'Till 30 DPD',     color:'#f97316'},
+  {key:'inc_60', label:'Till 60 DPD',     color:'#ef4444'},
+  {key:'inc_90', label:'Till 90 DPD',     color:'#a855f7'},
+  {key:'inc_90p',label:'90+ DPD',         color:'#6b7280'},
+];
+
+function renderTrend(){
+  const mSel = getMsSel('ms4');
+  const typSel = document.getElementById('tr-type').value;
+
+  let sum = D.summary;
+  if(mSel) sum = sum.filter(r=>mSel.includes(r.due_month));
+  if(typSel) sum = sum.filter(r=>r.new_old===typSel);
+
+  let th = '<table><thead><tr><th>Due Month</th><th>Type</th><th>Due Cases</th><th>Due Amount</th><th>Sanction Amt</th><th>Cases Paid</th><th>Collected</th><th>Collection %</th></tr></thead><tbody>';
+  sum.forEach(r=>{
+    const pctCol = r.collection_pct>=75?'#059669':r.collection_pct>=60?'#0099cc':r.collection_pct>=45?'#d97706':'#dc2626';
+    th += `<tr><td>${mm(r.due_month)}</td><td>${r.new_old}</td><td>${fmt(r.cnt_due)}</td><td>${fmtCr(r.amt_due)}</td><td>${fmtCr(r.sanction_amount)}</td><td>${fmt(r.cnt_paid)}</td><td>${fmtCr(r.collection_amount)}</td><td style="color:${pctCol};font-weight:700">${fmtPct(r.collection_pct)}</td></tr>`;
+  });
+  th += '</tbody></table>';
+  document.getElementById('trend-tbl').innerHTML = th;
+
+  // DPD Legend
+  document.getElementById('dpd-legend').innerHTML = DPD_BANDS.map(b=>`<div class="legend-item"><div class="legend-dot" style="background:${b.color}"></div>${b.label}</div>`).join('');
+
+  // Build stacked charts
+  const filterM = mSel || D.due_months;
+  [[D.trend_overall,'ch-tr0'],[D.trend_new,'ch-tr1'],[D.trend_old,'ch-tr2']].forEach(([tdata, cid])=>{
+    const fRows = tdata.filter(r=>filterM.includes(r.due_month));
+    const labels = fRows.map(r=>mm(r.due_month));
+    destroyChart(cid);
+    charts[cid] = new Chart(document.getElementById(cid),{
+      type:'bar',
+      data:{labels, datasets: DPD_BANDS.map(b=>({
+        label:b.label, data:fRows.map(r=>r[b.key]||0),
+        backgroundColor:b.color, borderColor:'#fff', borderWidth:0.5, stack:'s'
+      }))},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            mode:'index', intersect:false,
+            backgroundColor:'#1e293b', titleColor:'#f8fafc', bodyColor:'#94a3b8',
+            callbacks:{
+              footer: items => 'Total: '+items.reduce((a,i)=>a+(+i.parsed.y||0),0).toFixed(1)+'%'
+            }
+          }
+        },
+        scales:{
+          x:{stacked:true,ticks:{font:{family:'DM Mono',size:9},color:'#64748b'},grid:{color:'#e2e8f0'}},
+          y:{stacked:true,max:100,min:0,ticks:{font:{family:'DM Mono',size:9},color:'#64748b'},grid:{color:'#e2e8f0'}}
+        }
+      }
+    });
+  });
+}
+
+// ─────────────────── TAB 5: RESOLUTION CUTS ──────────────────
+function renderRes(){
+  const dateFrom = document.getElementById('r-from').value;
+  const dateTo   = document.getElementById('r-to').value;
+  const typSel   = document.getElementById('r-type').value;
+  const zoneSel  = getMsSelG('msr-zone');
+  const dbandSel = getMsSelG('msr-dband');
+  const tbandSel = getMsSelG('msr-tband');
+
+  let d = D.res_detail;
+  if(dateFrom) d = d.filter(r=>r.due_date && r.due_date >= dateFrom);
+  if(dateTo)   d = d.filter(r=>r.due_date && r.due_date <= dateTo);
+  if(typSel)   d = d.filter(r=>r.new_old===typSel);
+  if(zoneSel)  d = d.filter(r=>zoneSel.includes(r.zone));
+  if(dbandSel) d = d.filter(r=>dbandSel.includes(r.due_band));
+  if(tbandSel) d = d.filter(r=>tbandSel.includes(r.tenure_band));
+
+  function aggBy(rows, key, order){
+    const agg = {};
+    rows.forEach(r=>{
+      const k = r[key]||'Unknown';
+      if(!agg[k]) agg[k]={key:k,cnt_due:0,amt_due:0,sanction_amount:0,cnt_paid:0,collection_amount:0};
+      agg[k].cnt_due+=r.cnt_due||0; agg[k].amt_due+=r.amt_due||0; agg[k].sanction_amount+=r.sanction_amount||0; agg[k].cnt_paid+=r.cnt_paid||0; agg[k].collection_amount+=r.collection_amount||0;
+    });
+    let vals = Object.values(agg);
+    if(order) vals = order.map(k=>agg[k]).filter(Boolean);
+    const total = {key:'Grand Total',cnt_due:0,amt_due:0,sanction_amount:0,cnt_paid:0,collection_amount:0};
+    vals.forEach(r=>{ total.cnt_due+=r.cnt_due; total.amt_due+=r.amt_due; total.sanction_amount+=r.sanction_amount; total.cnt_paid+=r.cnt_paid; total.collection_amount+=r.collection_amount; });
+    return {rows:vals, total};
+  }
+
+  function resTbl(rows, total){
+    const grand_cnt = total.cnt_due||1;
+    let h = '<table><thead><tr><th style="text-align:left">Category</th><th>Count</th><th>Count Wtg%</th><th>Sanction Amt</th><th>Due Amt</th><th>Paid Count</th><th>Count Conv%</th><th>Collection Amt</th><th>Amt Conv%</th></tr></thead><tbody>';
+    rows.forEach(r=>{
+      const wtg = (r.cnt_due/grand_cnt*100).toFixed(1);
+      const cconv = r.cnt_due?(r.cnt_paid/r.cnt_due*100).toFixed(1):null;
+      const aconv = r.amt_due?(r.collection_amount/r.amt_due*100).toFixed(1):null;
+      h += `<tr><td style="font-weight:600;text-align:left">${r.key}</td><td>${fmt(r.cnt_due)}</td><td>${wtg}%</td><td>${fmtCr(r.sanction_amount)}</td><td>${fmtCr(r.amt_due)}</td><td>${fmt(r.cnt_paid)}</td>`;
+      h += `<td ${resCls(+cconv)}>${cconv!=null?cconv+'%':'--'}</td><td>${fmtCr(r.collection_amount)}</td><td ${resCls(+aconv)}>${aconv!=null?aconv+'%':'--'}</td></tr>`;
+    });
+    const cconv = total.cnt_due?(total.cnt_paid/total.cnt_due*100).toFixed(1):null;
+    const aconv = total.amt_due?(total.collection_amount/total.amt_due*100).toFixed(1):null;
+    h += `<tr class="tbl-total"><td style="text-align:left">Grand Total</td><td>${fmt(total.cnt_due)}</td><td>100%</td><td>${fmtCr(total.sanction_amount)}</td><td>${fmtCr(total.amt_due)}</td><td>${fmt(total.cnt_paid)}</td>`;
+    h += `<td ${resCls(+cconv)}>${cconv!=null?cconv+'%':'--'}</td><td>${fmtCr(total.collection_amount)}</td><td ${resCls(+aconv)}>${aconv!=null?aconv+'%':'--'}</td></tr>`;
+    h += '</tbody></table>';
+    return h;
+  }
+
+  const sections = [
+    {title:'1. New / Old Split', key:'new_old', order:['New','Old']},
+    {title:'2. Category (Disbursal)', key:'disbursal_category', order:D.catg_order},
+    {title:'3. Amount Band (Due Amt)', key:'due_band', order:D.due_band_order},
+    {title:'4. Zone', key:'zone', order:D.zones},
+    {title:'5. Loan Tenure Band', key:'tenure_band', order:D.ten_band_order},
+  ];
+
+  let html = '';
+  sections.forEach(s=>{
+    const {rows,total} = aggBy(d, s.key, s.order);
+    html += `<div class="res-sec"><h4>${s.title}</h4><div class="tbl-wrap">${resTbl(rows,total)}</div></div>`;
+  });
+  document.getElementById('res-tables').innerHTML = html;
+}
+
+// ─────────────────── INIT ────────────────────────────────────
+function initDashboard(){
+  D.due_months.forEach(m=>{
+    ['ms0','ms1','ms2','ms3','ms4'].forEach(id=>{
+      if(!msState[id]) return;
+    });
+  });
+  ['ms0','ms1','ms2','ms3','ms4'].forEach(id=>msInit(id, D.due_months, ()=>{
+    if(id==='ms0') renderOv();
+    if(id==='ms1') renderT1();
+    if(id==='ms2') renderT2();
+    if(id==='ms3') renderZS();
+    if(id==='ms4') renderTrend();
+  }));
+
+  msGInit('msr-zone', D.zones, renderRes);
+  msGInit('msr-dband', D.due_band_order, renderRes);
+  msGInit('msr-tband', D.ten_band_order, renderRes);
+
+  // Set default date range for resolution cuts
+  const allDates = D.res_detail.map(r=>r.due_date).filter(Boolean).sort();
+  if(allDates.length){
+    document.getElementById('r-from').value = allDates[0];
+    document.getElementById('r-to').value = allDates[allDates.length-1];
+  }
+
+  renderOv();
+  renderT1();
+  renderT2();
+  renderZS();
+  renderTrend();
+  renderRes();
+}
+</script>
+</body>
+</html>
